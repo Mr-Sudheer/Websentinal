@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import lxml
-from urllib.parse import urlparse, parse_qs, urljoin
+from urllib.parse import urljoin, urldefrag
 from collections import deque
 
 url=input("Target: ")
@@ -10,35 +10,62 @@ headers={
     "User-Agent": "Mozilla/5.0"
 }
 
-def crawl(url):
+def extract_links(soup, base_url):
+    links=[]
+
+    for link in soup.find_all(["a", "link"], href=True):
+        new_url=urljoin(base_url, link["href"])
+        clean_url=urldefrag(new_url).url
+        links.append(clean_url)
+
+    return links
+
+def extract_images(soup, base_url):
+    images=[]
+    
+    for image in soup.find_all("img", src=True):
+        img_url=urljoin(base_url, image["src"])
+        images.append(img_url)
+
+    return images
+    
+
+def static_crawl(start_url):
     visited=set()
     queue=deque()
-    queue.append((url,0))
+    queue.append((start_url,0))
 
     max_depth=2
 
     while queue:
-        url,depth=queue.popleft()
+        current_url,depth=queue.popleft()
 
-        if url in visited or depth>max_depth or "#" in url:
+        if current_url in visited or depth>max_depth:
             continue
 
-        visited.add(url)
-        print(url)
+        visited.add(current_url)
+        print(current_url)
 
         try:
-            r=requests.get(url, headers=headers, timeout=5)
+            r=requests.get(current_url, headers=headers, timeout=10)
             if not r.ok:
                 print("Request failed.", r.status_code)
-                exit()
+                continue
 
             soup=BeautifulSoup(r.text,"lxml")
 
-            for link in soup.find_all(["a", "link"],href=True):
-                new_url=urljoin(url,link["href"])
-                queue.append((new_url,depth+1))
+            print("\nLinks")
+            links=extract_links(soup, current_url)
+            for link in links:
+                if link not in visited:
+                    queue.append((link, depth+1))
+                
+            print("\nImages")
+            images=extract_images(soup, current_url)
+            for image in images:
+                print(image)
 
         except:
             pass
 
-crawl(url)
+static_crawl(url)
