@@ -1,14 +1,50 @@
 import requests
 from bs4 import BeautifulSoup
-import lxml
-from urllib.parse import urljoin, urldefrag
+import re
+from urllib.parse import urljoin, urldefrag, urlparse, parse_qs
 from collections import deque
+import time, random
+from playwright.sync_api import sync_playwright
 
-url=input("Target: ")
+url=input("Target: ").strip()
 
-headers={
-    "User-Agent": "Mozilla/5.0"
-}
+def requires_js(base_url):
+    try:
+        r= requests.get(base_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if not r.ok:
+            print("Request failed.", r.status_code)
+            return False
+
+        soup=BeautifulSoup(r.text,"lxml")
+
+        raw_text = soup.get_text(strip=True)
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(base_url, timeout=15000)
+
+            page.wait_for_timeout(3000)
+
+            rendered_html = page.content()
+            browser.close()
+        
+        rendered_page = BeautifulSoup(rendered_html, "lxml")
+        rendered_text = rendered_page.get_text(strip=True)
+
+        if len(rendered_text) > len(raw_text)*2:
+            return True
+        
+        return False
+        
+    except Exception as e:
+        return False
+    
+if requires_js(url):
+    print("This website REQUIRES JavaScript.")
+else:
+    print("This website does NOT require JavaScript.")
+    
 
 def extract_links(soup, base_url):
     links=set()
@@ -56,6 +92,12 @@ def extract_inputs(soup):
         inputs.add((fname, ftype))
     return inputs
 
+def extract_parameters(base_url):
+    parsed=urlparse(base_url)
+    params=parse_qs(parsed.query)
+
+    return params
+
 def static_crawl(start_url):
     visited=set()
     queue=deque()
@@ -66,8 +108,9 @@ def static_crawl(start_url):
     all_images=set()
     all_scripts=set()
     all_inputs=set()
+    all_params={}
 
-    max_depth=5
+    max_depth=3
 
     while queue:
         current_url,depth=queue.popleft()
@@ -79,6 +122,8 @@ def static_crawl(start_url):
 
         try:
             r=requests.get(current_url, headers=headers, timeout=10)
+            time.sleep(random.uniform(0.3, 1.0))
+
             if not r.ok:
                 print("Request failed.", r.status_code)
                 continue
@@ -112,6 +157,15 @@ def static_crawl(start_url):
             for inp in inputs:
                 all_inputs.add(inp)
 
+            params=extract_parameters(current_url) # parameters
+
+            for key, value in params.items():
+                if key not in all_params:
+                    all_params[key]=set()
+                
+                for v in value:
+                    all_params[key].add(v)
+
         except Exception as e:
             print("Error: ", e)
 
@@ -134,6 +188,10 @@ def static_crawl(start_url):
     print("\nInputs")
     for inpt in all_inputs:
         print(inpt)
+
+    print("\nParameters")
+    for key, values in all_params.items():
+        print(f"{key}: {list(values)}")
     print("\n")
 
     print("Total links: ", len(all_links))
@@ -141,6 +199,7 @@ def static_crawl(start_url):
     print("Total resources: ", len(all_rsc))
     print("Total scripts: ", len(all_scripts))
     print("Total inputs: ", len(all_inputs))
+    print("Total parameters: ", len(all_params))
 
 
 static_crawl(url)
