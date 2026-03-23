@@ -40,12 +40,6 @@ def requires_js(base_url):
     except Exception as e:
         return False
     
-if requires_js(url):
-    print("This website REQUIRES JavaScript.")
-else:
-    print("This website does NOT require JavaScript.")
-    
-
 def extract_links(soup, base_url):
     links=set()
 
@@ -98,7 +92,111 @@ def extract_parameters(base_url):
 
     return params
 
-def static_crawl(start_url):
+endpoint_patterns = [
+    re.compile(r'["\'](\/api\/[^"\']+)["\']'),
+    re.compile(r'["\'](\/v[0-9]+\/[^"\']+)["\']'),
+    re.compile(r'https?:\/\/[^\s"\']+\/api\/[^\s"\']+')
+]
+
+def static_endpoints(js_files):
+    endpoints = set()
+
+    for js in js_files:
+        try:
+            r = requests.get(js, timeout=5)
+            content = r.text
+
+            for pattern in endpoint_patterns:
+                matches = pattern.findall(content)
+                for m in matches:
+                    endpoints.add(m)
+
+        except:
+            continue
+
+    return endpoints
+
+def dynamic_endpoints(url):
+    dynamic_endpoints = set()
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        def handle_request(request):
+            for x in ["api", "graphql", "ajax"]:
+                if x in request.url:
+                    dynamic_endpoints.add(request.url)
+                    break
+
+        page.on("request", handle_request)
+
+        page.goto(url, timeout=60000)
+
+        for _ in range(5):
+            page.mouse.wheel(0, 3000)
+            page.wait_for_timeout(1000)
+
+        buttons = page.query_selector_all("button")
+        for btn in buttons:
+            try:
+                btn.click(timeout=2000)
+                page.wait_for_timeout(1000)
+            except:
+                continue
+
+        links = page.query_selector_all("a")
+        for link in links[:10]:
+            try:
+                link.click(timeout=2000)
+                page.wait_for_timeout(1000)
+                page.go_back()
+            except:
+                continue
+
+        inputs = page.query_selector_all("input")
+        for inp in inputs:
+            try:
+                inp.fill("test")
+                page.wait_for_timeout(1000)
+            except:
+                continue
+
+        browser.close()
+
+    return dynamic_endpoints
+
+def hidden_endpoints(base_url):
+    wordlist = ["api", "admin", "internal", "debug", "v1", "v2", "private"]
+    found = set()
+
+    for word in wordlist:
+        test_url = urljoin(base_url, f"/{word}")
+
+        try:
+            r = requests.get(test_url, timeout=5)
+
+            if r.status_code in [200, 401, 403]:
+                found.add(test_url)
+
+        except:
+            continue
+
+    return found
+
+def contextual_endpoints(all_links):
+    contextual = set()
+
+    for link in all_links:
+        parsed = urlparse(link)
+
+        if parsed.query:
+            contextual.add(link)
+
+    return contextual
+
+def crawl(start_url):
+    print("\n -> CRAWLER")
     visited=set()
     queue=deque()
     queue.append((start_url,0))
@@ -110,19 +208,19 @@ def static_crawl(start_url):
     all_inputs=set()
     all_params={}
 
-    max_depth=3
+    max_depth=2
 
     while queue:
         current_url,depth=queue.popleft()
 
+        headers={"User-Agent": "Mozilla/5.0"}
         if current_url in visited or depth>max_depth:
             continue
 
         visited.add(current_url)
 
         try:
-            r=requests.get(current_url, headers=headers, timeout=10)
-            time.sleep(random.uniform(0.3, 1.0))
+            r=requests.get(current_url, headers=headers, timeout=5)
 
             if not r.ok:
                 print("Request failed.", r.status_code)
@@ -201,5 +299,46 @@ def static_crawl(start_url):
     print("Total inputs: ", len(all_inputs))
     print("Total parameters: ", len(all_params))
 
+    return all_links, all_scripts
 
-static_crawl(url)
+
+def endpoints(start_url, all_scripts, all_links):
+    print("\n -> ENDPOINT EXTRACTION")
+
+    static_eps = static_endpoints(all_scripts) # static js parsing
+
+    dynamic_eps = dynamic_endpoints(start_url) # dynamic (runtime) 
+
+    hidden_eps = hidden_endpoints(start_url) # Hidden(fuzzing)
+
+    contextual_eps = contextual_endpoints(all_links) # Contextual
+
+    print("\nStatic Endpoints")
+    for e in static_eps:
+        print(e)
+
+    print("\nDynamic Endpoints")
+    for e in dynamic_eps:
+        print(e)
+
+    print("\nHidden Endpoints")
+    for e in hidden_eps:
+        print(e)
+
+    print("\nContextual Endpoints")
+    for e in contextual_eps:
+        print(e)
+
+    print("\nTotal Static endpoints:", len(static_eps))
+    print("Total Dynamic endpoints:", len(dynamic_eps))
+    print("Total Hidden endpoints:", len(hidden_eps))
+    print("Total Contextual endpoints:", len(contextual_eps))
+
+if requires_js(url):
+    print("This website REQUIRES JavaScript.")
+    scripts, links = crawl(url)
+else:
+    print("This website does NOT require JavaScript.")
+    scripts, links = crawl(url)
+
+endpoints(url, scripts, links)
