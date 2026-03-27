@@ -86,6 +86,31 @@ def extract_inputs(soup):
         inputs.add((fname, ftype))
     return inputs
 
+def extract_forms(soup, base_url):
+    forms = []
+
+    for form in soup.find_all("form"):
+        action = form.get("action")
+        method = form.get("method", "get").lower()
+
+        full_action = urljoin(base_url, action)
+
+        inputs = []
+        for inp in form.find_all(["input", "textarea", "select"]):
+            inputs.append({
+                "name": inp.get("name"),
+                "type": inp.get("type", "text"),
+                "value": inp.get("value", "")
+            })
+
+        forms.append({
+            "action": full_action,
+            "method": method,
+            "inputs": inputs
+        })
+
+    return forms
+
 def extract_parameters(base_url):
     parsed=urlparse(base_url)
     params=parse_qs(parsed.query)
@@ -131,11 +156,11 @@ def dynamic_endpoints(url):
 
         page.on("request", handle_request)
 
-        page.goto(url, timeout=60000)
+        page.goto(url, timeout=5000)
 
-        for _ in range(5):
+        for _ in range(2):
             page.mouse.wheel(0, 3000)
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(800)
 
         buttons = page.query_selector_all("button")
         for btn in buttons:
@@ -161,6 +186,12 @@ def dynamic_endpoints(url):
                 page.wait_for_timeout(1000)
             except:
                 continue
+        
+        submit_btn = page.query_selector("button[type=submit]")
+
+        if submit_btn:
+            submit_btn.click()
+            page.wait_for_timeout(1000)
 
         browser.close()
 
@@ -207,6 +238,7 @@ def crawl(start_url):
     all_scripts=set()
     all_inputs=set()
     all_params={}
+    all_forms= []
 
     max_depth=2
 
@@ -255,6 +287,9 @@ def crawl(start_url):
             for inp in inputs:
                 all_inputs.add(inp)
 
+            forms=extract_forms(soup, current_url) # forms
+            all_forms.extend(forms)
+
             params=extract_parameters(current_url) # parameters
 
             for key, value in params.items():
@@ -287,6 +322,10 @@ def crawl(start_url):
     for inpt in all_inputs:
         print(inpt)
 
+    print("\nForms")
+    for form in all_forms:
+        print(form)
+
     print("\nParameters")
     for key, values in all_params.items():
         print(f"{key}: {list(values)}")
@@ -297,6 +336,7 @@ def crawl(start_url):
     print("Total resources: ", len(all_rsc))
     print("Total scripts: ", len(all_scripts))
     print("Total inputs: ", len(all_inputs))
+    print("Total forms: ", len(all_forms))
     print("Total parameters: ", len(all_params))
 
     return all_links, all_scripts
@@ -334,11 +374,12 @@ def endpoints(start_url, all_scripts, all_links):
     print("Total Hidden endpoints:", len(hidden_eps))
     print("Total Contextual endpoints:", len(contextual_eps))
 
-if requires_js(url):
-    print("This website REQUIRES JavaScript.")
-    scripts, links = crawl(url)
-else:
-    print("This website does NOT require JavaScript.")
-    scripts, links = crawl(url)
+scripts, links = crawl(url)
 
-endpoints(url, scripts, links)
+if requires_js(url):
+    print("\nJS-heavy site detected → endpoint extraction will be slow")
+
+q1 = input("Continue endpoint extraction? (Y/N): ")
+
+if q1.lower() == "y":
+    endpoints(url, scripts, links)
