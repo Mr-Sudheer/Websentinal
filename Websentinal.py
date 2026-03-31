@@ -149,49 +149,39 @@ def dynamic_endpoints(url):
         page = browser.new_page()
 
         def handle_request(request):
-            for x in ["api", "graphql", "ajax"]:
-                if x in request.url:
-                    dynamic_endpoints.add(request.url)
-                    break
+            if request.resource_type in ["xhr", "fetch"]:
+                dynamic_endpoints.add(request.url)
+
+        def handle_response(response):
+            try:
+                if "application/json" in response.headers.get("content-type", ""):
+                    dynamic_endpoints.add(response.url)
+            except Exception as e:
+                pass
 
         page.on("request", handle_request)
+        page.on("response", handle_response)
 
-        page.goto(url, timeout=5000)
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=10000)
+            page.wait_for_timeout(3000)
+            buttons=page.query_selector_all("button")
 
-        for _ in range(2):
-            page.mouse.wheel(0, 3000)
-            page.wait_for_timeout(800)
+            for btn in buttons[:3]:
+                try:
+                    text=btn.inner_text().lower()
 
-        buttons = page.query_selector_all("button")
-        for btn in buttons:
-            try:
-                btn.click(timeout=2000)
-                page.wait_for_timeout(1000)
-            except:
-                continue
+                    for x in ["login", "submit", "search"]:
+                        if x in text:
+                            if btn.is_visible() and btn.is_enabled():
+                                btn.click()
+                                page.wait_for_timeout(1000)
+                            break
+                except Exception as e:
+                    continue
 
-        links = page.query_selector_all("a")
-        for link in links[:10]:
-            try:
-                link.click(timeout=2000)
-                page.wait_for_timeout(1000)
-                page.go_back()
-            except:
-                continue
-
-        inputs = page.query_selector_all("input")
-        for inp in inputs:
-            try:
-                inp.fill("test")
-                page.wait_for_timeout(1000)
-            except:
-                continue
-        
-        submit_btn = page.query_selector("button[type=submit]")
-
-        if submit_btn:
-            submit_btn.click()
-            page.wait_for_timeout(1000)
+        except Exception as e:
+            print("Dynamic scan error", e)
 
         browser.close()
 
@@ -231,6 +221,11 @@ def crawl(start_url):
     visited=set()
     queue=deque()
     queue.append((start_url,0))
+    headers={"User-Agent": "Mozilla/5.0"}
+    start_netloc = urlparse(start_url).netloc
+
+    blocked_ext = (".jpg", ".png", ".css", ".pdf", ".zip", ".svg")
+
 
     all_links=set()
     all_rsc=set()
@@ -240,16 +235,24 @@ def crawl(start_url):
     all_params={}
     all_forms= []
 
-    max_depth=2
+    max_depth=1
 
     while queue:
         current_url,depth=queue.popleft()
+        current_url=current_url.split("#")[0]
+        parsed=urlparse(current_url)
 
-        headers={"User-Agent": "Mozilla/5.0"}
-        if current_url in visited or depth>max_depth:
-            continue
+        if (
+        current_url in visited
+        or depth > max_depth
+        or parsed.netloc != start_netloc
+        or current_url.endswith(blocked_ext)
+        ):
+            queue.append((link, depth+1))
 
         visited.add(current_url)
+
+
 
         try:
             r=requests.get(current_url, headers=headers, timeout=5)
@@ -263,8 +266,12 @@ def crawl(start_url):
             links=extract_links(soup, current_url) #Links
 
             for link in links:
+                link=link.split("#")[0]
+                parsed_link=urlparse(link)
                 all_links.add(link)
-                if link not in visited and link not in all_links:
+                if(parsed_link.netloc == start_netloc
+                   and link not in visited
+                   and not link.endswith(blocked_ext)):
                     queue.append((link, depth+1))
 
             resources=extract_resources(soup, current_url) #Resources
@@ -339,7 +346,7 @@ def crawl(start_url):
     print("Total forms: ", len(all_forms))
     print("Total parameters: ", len(all_params))
 
-    return all_links, all_scripts
+    return all_scripts, all_links
 
 
 def endpoints(start_url, all_scripts, all_links):
@@ -374,12 +381,23 @@ def endpoints(start_url, all_scripts, all_links):
     print("Total Hidden endpoints:", len(hidden_eps))
     print("Total Contextual endpoints:", len(contextual_eps))
 
+start_crawl=time.time()
 scripts, links = crawl(url)
+end_crawl=time.time()
+print("Time taken: ", end_crawl - start_crawl, "seconds")
 
+run_endpoint = False
 if requires_js(url):
     print("\nJS-heavy site detected → endpoint extraction will be slow")
+    q1 = input("Continue endpoint extraction? (Y/N): ")
+    if q1.lower() == "y":
+        run_endpoint = True
+else:
+    run_endpoint = True
 
-q1 = input("Continue endpoint extraction? (Y/N): ")
-
-if q1.lower() == "y":
+if run_endpoint:
+    start_endpoint=time.time()
     endpoints(url, scripts, links)
+    end_endpoint=time.time()
+    print("Time taken: ", end_endpoint - start_endpoint, "seconds")
+    
