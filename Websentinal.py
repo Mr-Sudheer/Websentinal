@@ -59,15 +59,6 @@ def extract_resources(soup, base_url):
     
     return resources
 
-def extract_images(soup, base_url):
-    images=set()
-    
-    for image in soup.find_all("img", src=True):
-        img_url=urljoin(base_url, image["src"])
-        images.add(img_url)
-
-    return images
-
 def extract_script(soup, base_url):
     scripts=set()
 
@@ -226,10 +217,8 @@ def crawl(start_url):
 
     blocked_ext = (".jpg", ".png", ".css", ".pdf", ".zip", ".svg")
 
-
     all_links=set()
     all_rsc=set()
-    all_images=set()
     all_scripts=set()
     all_inputs=set()
     all_params={}
@@ -279,11 +268,6 @@ def crawl(start_url):
             for resource in resources:
                 all_rsc.add(resource)
 
-            images=extract_images(soup, current_url) #Images
-                 
-            for image in images:
-                all_images.add(image)
-
             script=extract_script(soup, current_url) #Script
 
             for jscrpt in script:
@@ -317,10 +301,6 @@ def crawl(start_url):
     for rsc in all_rsc:
         print(rsc)
 
-    print("\nImages")
-    for img in all_images:
-        print(img)
-
     print("\nScripts")
     for scrpt in all_scripts:
         print(scrpt)
@@ -339,7 +319,6 @@ def crawl(start_url):
     print("\n")
 
     print("Total links: ", len(all_links))
-    print("Total images: ", len(all_images))
     print("Total resources: ", len(all_rsc))
     print("Total scripts: ", len(all_scripts))
     print("Total inputs: ", len(all_inputs))
