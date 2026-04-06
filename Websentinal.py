@@ -1,10 +1,13 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import json
 from urllib.parse import urljoin, urldefrag, urlparse, parse_qs
 from collections import deque
 import time, random
 from playwright.sync_api import sync_playwright
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 url=input("Target: ").strip()
 
@@ -49,6 +52,15 @@ def extract_links(soup, base_url):
         links.add(clean_url)
 
     return links
+
+def extract_images(soup, base_url):
+    images=set()
+    
+    for image in soup.find_all("img", src=True):
+        img_url=urljoin(base_url, image["src"])
+        images.add(img_url)
+
+    return images
 
 def extract_resources(soup, base_url):
     resources=set()
@@ -212,15 +224,21 @@ def crawl(start_url):
     visited=set()
     queue=deque()
     queue.append((start_url,0))
-    headers={"User-Agent": "Mozilla/5.0"}
+    headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive"
+}
+    
     start_netloc = urlparse(start_url).netloc
-
     blocked_ext = (".jpg", ".png", ".css", ".pdf", ".zip", ".svg")
 
     all_links=set()
     all_rsc=set()
     all_scripts=set()
     all_inputs=set()
+    all_images=set()
     all_params={}
     all_forms= []
 
@@ -237,7 +255,7 @@ def crawl(start_url):
         or parsed.netloc != start_netloc
         or current_url.endswith(blocked_ext)
         ):
-            queue.append((link, depth+1))
+            continue
 
         visited.add(current_url)
 
@@ -278,6 +296,11 @@ def crawl(start_url):
             for inp in inputs:
                 all_inputs.add(inp)
 
+            images=extract_images(soup, current_url) #Images
+                 
+            for image in images:
+                all_images.add(image)
+
             forms=extract_forms(soup, current_url) # forms
             all_forms.extend(forms)
 
@@ -293,39 +316,25 @@ def crawl(start_url):
         except Exception as e:
             print("Error: ", e)
 
-    print("\nLinks")
-    for lnk in all_links:
-        print(lnk)
-
-    print("\nResources")
-    for rsc in all_rsc:
-        print(rsc)
-
-    print("\nScripts")
-    for scrpt in all_scripts:
-        print(scrpt)
-
-    print("\nInputs")
-    for inpt in all_inputs:
-        print(inpt)
-
-    print("\nForms")
-    for form in all_forms:
-        print(form)
-
-    print("\nParameters")
-    for key, values in all_params.items():
-        print(f"{key}: {list(values)}")
-    print("\n")
-
     print("Total links: ", len(all_links))
     print("Total resources: ", len(all_rsc))
     print("Total scripts: ", len(all_scripts))
     print("Total inputs: ", len(all_inputs))
+    print("Total images: ", len(all_images))
     print("Total forms: ", len(all_forms))
-    print("Total parameters: ", len(all_params))
+    print("Total parameters: ", len(all_params))    
 
-    return all_scripts, all_links
+    crawl_data = {
+    "links": list(all_links),
+    "scripts": list(all_scripts),
+    "images": list(all_images),
+    "resources": list(all_rsc),
+    "inputs": list(all_inputs),
+    "forms": all_forms,
+    "parameters": {k: list(v) for k, v in all_params.items()}
+    }
+
+    return all_scripts, all_links, crawl_data
 
 
 def endpoints(start_url, all_scripts, all_links):
@@ -339,29 +348,22 @@ def endpoints(start_url, all_scripts, all_links):
 
     contextual_eps = contextual_endpoints(all_links) # Contextual
 
-    print("\nStatic Endpoints")
-    for e in static_eps:
-        print(e)
-
-    print("\nDynamic Endpoints")
-    for e in dynamic_eps:
-        print(e)
-
-    print("\nHidden Endpoints")
-    for e in hidden_eps:
-        print(e)
-
-    print("\nContextual Endpoints")
-    for e in contextual_eps:
-        print(e)
-
     print("\nTotal Static endpoints:", len(static_eps))
     print("Total Dynamic endpoints:", len(dynamic_eps))
     print("Total Hidden endpoints:", len(hidden_eps))
     print("Total Contextual endpoints:", len(contextual_eps))
 
+    endpoint_data = {
+    "static": list(static_eps),
+    "dynamic": list(dynamic_eps),
+    "hidden": list(hidden_eps),
+    "contextual": list(contextual_eps)
+    }
+
+    return endpoint_data
+
 start_crawl=time.time()
-scripts, links = crawl(url)
+scripts, links, crawl_data = crawl(url)
 end_crawl=time.time()
 print("Time taken: ", end_crawl - start_crawl, "seconds")
 
@@ -376,7 +378,30 @@ else:
 
 if run_endpoint:
     start_endpoint=time.time()
-    endpoints(url, scripts, links)
+    endpoint_data=endpoints(url, scripts, links)
     end_endpoint=time.time()
     print("Time taken: ", end_endpoint - start_endpoint, "seconds")
     
+def save_json(data, filename):
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+def save_txt(data, filename):
+    with open(filename, "w", encoding="utf-8") as f:
+        for key, value in data.items():
+            f.write(f"\n {key.upper()} \n")
+
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    f.write(f"{k}: {v}\n")
+            else:
+                for item in value:
+                    f.write(f"{item}\n")
+
+save_json(crawl_data, "crawl.json")
+save_txt(crawl_data, "crawl.txt")
+
+save_json(endpoint_data, "endpoints.json")
+save_txt(endpoint_data, "endpoints.txt")
+
+print("\nCheck the saved files for the extracted links")
