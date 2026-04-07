@@ -56,16 +56,7 @@ Detection of exposed:
 
 ---
 
-## 📌 Future Improvements
-
-- Parallel crawling support  
-- Better handling of WAFs and anti-bot systems  
-- Improved detection accuracy  
-- Reporting and visualization  
-
----
-
-## 🛠️ Usage
+## 🛠️ Installation
 
 ```bash
 git clone https://github.com/Mr-Sudheer/Websentinal.git
