@@ -1,6 +1,6 @@
 # 🛡️ WebSentinal
 
-**WebSentinal** is a web vulnerability scanner focused on crawling web applications and extracting potential attack surfaces such as links, endpoints, and input vectors.
+**WebSentinal** is a web crawler focused on crawling web applications and extracting potential attack surfaces such as links, endpoints, and input vectors.
 
 It is built to assist in the **reconnaissance phase** of security testing by mapping out the structure of a target application.
 
@@ -26,25 +26,31 @@ Identifies different types of endpoints:
 - **Static Endpoints**
 - **Dynamic Endpoints**
 - **Hidden Endpoints**
-- **Contextual Endpoints**
+- **Contextual Endpoints**   
 
---- 
-## 🧪 Planned Features
+---
 
-### ⚠️ Vulnerability Detection
-Basic vulnerability checks will be added:
+## 🛠️ Installation
 
-- **SQL Injection (SQLi)**
-- **Cross-Site Scripting (XSS)**
-- **Insecure Direct Object References (IDOR)**
+<b>1. Clone repo</b>
+```bash
+git clone https://github.com/Mr-Sudheer/Websentinal.git
+```
+```bash
+cd Websentinal
+```
+<b>2. Install dependencies</b>
+```bash
+pip install -r requirements.txt
+```
+```bash
+playwright install
+```
 
-### 🔐 Sensitive Data Exposure Detection
-
-Detection of exposed:
-
-- API keys  
-- Tokens  
-- Secrets  
+<b>3. Run the tool</b>
+```bash
+python Websentinal.py
+```
 
 ---
 
@@ -52,15 +58,4 @@ Detection of exposed:
 
 - Some websites return **403 Forbidden**, which prevents effective crawling  
 - No support for **parallel crawling**  
-- Limited handling of advanced anti-bot protections  
-
----
-
-## 🛠️ Installation
-
-```bash
-git clone https://github.com/Mr-Sudheer/Websentinal.git
-```
-```bash
-Websentinal.py
-```
+- Limited handling of advanced anti-bot protections
